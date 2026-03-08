@@ -4,280 +4,240 @@ const cheerio = require('cheerio');
 class NetflixAPI {
     constructor() {
         this.baseURL = 'https://www.netflix.com';
-        this.apiBase = 'https://www.netflix.com/api/shakti';
-        this.buildIdentifier = null;
-        this.authUrl = null;
+        this.cookieJar = {};
     }
 
     // Parse cookie từ nhiều format
     parseCookie(cookieInput) {
         let cookies = {};
         
-        // Format 1: JSON (EditThisCookie)
-        if (cookieInput.trim().startsWith('[')) {
-            try {
+        try {
+            // Format 1: JSON (EditThisCookie)
+            if (cookieInput.trim().startsWith('[')) {
                 const arr = JSON.parse(cookieInput);
                 arr.forEach(c => {
-                    cookies[c.name] = c.value;
+                    if (c.name && c.value) cookies[c.name] = c.value;
                 });
-            } catch (e) {
-                throw new Error('Invalid JSON cookie format');
             }
-        }
-        // Format 2: Netscape format
-        else if (cookieInput.includes('\t')) {
-            const lines = cookieInput.split('\n');
-            lines.forEach(line => {
-                const parts = line.trim().split('\t');
-                if (parts.length >= 7) {
-                    const name = parts[5];
-                    const value = parts[6];
-                    cookies[name] = value;
-                }
-            });
-        }
-        // Format 3: Header string (name=value; name2=value2)
-        else if (cookieInput.includes('=')) {
-            cookieInput.split(';').forEach(pair => {
-                const [name, value] = pair.trim().split('=');
-                if (name && value) cookies[name] = value;
-            });
+            // Format 2: Netscape format
+            else if (cookieInput.includes('\t')) {
+                const lines = cookieInput.split('\n');
+                lines.forEach(line => {
+                    const parts = line.trim().split('\t');
+                    if (parts.length >= 7) {
+                        cookies[parts[5]] = parts[6];
+                    }
+                });
+            }
+            // Format 3: Header string
+            else if (cookieInput.includes('=')) {
+                cookieInput.split(';').forEach(pair => {
+                    const [name, ...valueParts] = pair.trim().split('=');
+                    if (name && valueParts.length > 0) {
+                        cookies[name.trim()] = valueParts.join('=').trim();
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('Parse cookie error:', e.message);
         }
         
         // Kiểm tra cookie cần thiết
-        if (!cookies['NetflixId']) {
+        if (!cookies['NetflixId'] && !cookies['netflixId']) {
             throw new Error('Missing NetflixId in cookie');
         }
         
-        return cookies;
+        // Chuẩn hóa tên
+        const normalized = {};
+        Object.keys(cookies).forEach(key => {
+            const lowerKey = key.toLowerCase();
+            if (lowerKey === 'netflixid') normalized['NetflixId'] = cookies[key];
+            else if (lowerKey === 'securenetflixid') normalized['SecureNetflixId'] = cookies[key];
+            else normalized[key] = cookies[key];
+        });
+        
+        return normalized;
     }
 
-    // Tạo cookie string từ object
+    // Tạo cookie string
     stringifyCookies(cookies) {
         return Object.entries(cookies)
             .map(([k, v]) => `${k}=${v}`)
             .join('; ');
     }
 
-    // Lấy build identifier (cần cho API calls)
-    async getBuildId() {
-        try {
-            const response = await axios.get('https://www.netflix.com/login', {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                }
-            });
-            
-            const $ = cheerio.load(response.data);
-            
-            // Tìm trong script tags
-            const scripts = $('script').toArray();
-            for (let script of scripts) {
-                const content = $(script).html() || '';
-                
-                // Tìm AUTH_URL
-                const authMatch = content.match(/"AUTH_URL":"([^"]+)"/);
-                if (authMatch) this.authUrl = authMatch[1];
-                
-                // Tìm build identifier
-                const buildMatch = content.match(/"BUILD_IDENTIFIER":"([^"]+)"/);
-                if (buildMatch) {
-                    this.buildIdentifier = buildMatch[1];
-                    return this.buildIdentifier;
-                }
-            }
-            
-            // Fallback
-            this.buildIdentifier = 'v1b5c5e5f'; // Có thể thay đổi theo thời gian
-            return this.buildIdentifier;
-            
-        } catch (error) {
-            console.error('Get build ID error:', error.message);
-            this.buildIdentifier = 'v1b5c5e5f';
-            return this.buildIdentifier;
-        }
+    // Tạo headers giống browser thật
+    getHeaders(cookieStr) {
+        return {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.0',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Cookie': cookieStr,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'Connection': 'keep-alive',
+        };
     }
 
-    // Check cookie và lấy thông tin account
+    // Check cookie bằng cách vào trang browse
     async checkCookie(cookieInput) {
         try {
             const cookies = this.parseCookie(cookieInput);
             const cookieStr = this.stringifyCookies(cookies);
             
-            // Bước 1: Vào trang chính để check redirect
-            const homeResponse = await axios.get(this.baseURL + '/browse', {
-                headers: {
-                    'Cookie': cookieStr,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.0',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Cache-Control': 'no-cache',
-                },
+            console.log('Checking cookie:', Object.keys(cookies).join(', '));
+            
+            // Thử vào trang browse
+            const response = await axios.get('https://www.netflix.com/browse', {
+                headers: this.getHeaders(cookieStr),
                 maxRedirects: 0,
-                validateStatus: (status) => status < 400 || status === 302
+                validateStatus: (status) => status < 400 || status === 302,
+                timeout: 15000
             });
 
             // Nếu redirect về login → Cookie dead
-            if (homeResponse.status === 302 && homeResponse.headers.location?.includes('login')) {
+            if (response.status === 302) {
+                const location = response.headers.location || '';
+                if (location.includes('login') || location.includes('signup')) {
+                    return {
+                        status: 'Dead',
+                        message: 'Cookie hết hạn (redirect to login)',
+                        redirect: location
+                    };
+                }
+            }
+
+            // Nếu vào được browse → Live
+            if (response.status === 200) {
+                // Parse thông tin từ HTML
+                const $ = cheerio.load(response.data);
+                const pageTitle = $('title').text();
+                
+                // Tìm data trong script tags
+                let userData = {};
+                $('script').each((i, elem) => {
+                    const content = $(elem).html() || '';
+                    if (content.includes('netflix') && content.includes('user')) {
+                        try {
+                            const match = content.match(/"userInfo":({[^}]+})/);
+                            if (match) userData = JSON.parse(match[1]);
+                        } catch (e) {}
+                    }
+                });
+
                 return {
-                    status: 'Dead',
-                    message: 'Cookie hết hạn hoặc không hợp lệ',
-                    redirect: homeResponse.headers.location
+                    status: 'Live',
+                    message: 'Cookie hợp lệ',
+                    title: pageTitle,
+                    cookies: cookies,
+                    userData: userData
                 };
             }
 
-            // Bước 2: Lấy thông tin user từ API
-            const buildId = await this.getBuildId();
-            const apiUrl = `${this.apiBase}/${buildId}/profiles`;
-            
-            const apiResponse = await axios.get(apiUrl, {
-                headers: {
-                    'Cookie': cookieStr,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': 'application/json',
-                    'X-Netflix.request.client.user.guid': cookies['NetflixId']?.split('%')[0] || '',
-                }
-            });
-
-            const userData = apiResponse.data;
-            
-            // Parse thông tin
-            const profiles = userData.profiles || [];
-            const activeProfile = profiles.find(p => p.isActive) || profiles[0];
-            
             return {
-                status: 'Live',
-                message: 'Cookie hợp lệ',
-                account: {
-                    guid: userData.guid,
-                    country: userData.countryOfSignup,
-                    membershipStatus: userData.membershipStatus,
-                    isInFreeTrial: userData.isInFreeTrial,
-                    canWatch: userData.canWatch,
-                },
-                profile: activeProfile ? {
-                    id: activeProfile.guid,
-                    name: activeProfile.profileName,
-                    avatar: activeProfile.avatarImages?.[0]?.url,
-                    maturityLevel: activeProfile.maturityLevel,
-                } : null,
-                profiles: profiles.map(p => ({
-                    id: p.guid,
-                    name: p.profileName
-                })),
-                cookies: cookies
+                status: 'Unknown',
+                message: `Status code: ${response.status}`,
+                headers: response.headers
             };
 
         } catch (error) {
-            if (error.response?.status === 401) {
+            if (error.response?.status === 401 || error.response?.status === 403) {
                 return {
                     status: 'Dead',
-                    message: 'Cookie không hợp lệ (401 Unauthorized)'
+                    message: `Cookie không hợp lệ (${error.response.status})`
                 };
             }
             
-            console.error('Check cookie error:', error.message);
+            console.error('Check error:', error.message);
             return {
                 status: 'Error',
                 message: error.message,
-                details: error.response?.data
+                details: error.code
             };
         }
     }
 
-    // Generate Auto Login Token
+    // Generate token - Cách đơn giản hơn
     async generateToken(cookies) {
         try {
-            // Netflix sử dụng nhiều cách tạo token, đây là cách phổ biến nhất
-            
             const cookieStr = typeof cookies === 'string' ? cookies : this.stringifyCookies(cookies);
             
-            // Cách 1: Dùng API /signup/login
-            const response = await axios.post('https://www.netflix.com/api/auth/login', {
-                // Netflix internal API, có thể thay đổi
-            }, {
-                headers: {
-                    'Cookie': cookieStr,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Content-Type': 'application/json',
-                }
-            });
-
-            // Cách 2: Tạo manual token (base64 của cookie + timestamp)
-            const tokenPayload = {
-                netflixId: cookies['NetflixId'],
-                secureNetflixId: cookies['SecureNetflixId'],
-                created: Date.now(),
-                expires: Date.now() + (24 * 60 * 60 * 1000) // 24h
+            // Cách 1: Tạo token từ cookie (base64)
+            const tokenData = {
+                NetflixId: cookies['NetflixId'],
+                SecureNetflixId: cookies['SecureNetflixId'],
+                timestamp: Date.now(),
+                expires: Date.now() + (24 * 60 * 60 * 1000)
             };
             
-            const token = Buffer.from(JSON.stringify(tokenPayload)).toString('base64');
+            const token = Buffer.from(JSON.stringify(tokenData)).toString('base64');
             
-            // Tạo login link
-            const loginUrl = `https://www.netflix.com/login?nftoken=${token}&nextpage=https%3A%2F%2Fwww.netflix.com%2Fbrowse`;
+            // Tạo login URL
+            const encodedToken = encodeURIComponent(token);
+            const loginUrl = `https://www.netflix.com/login?nftoken=${encodedToken}&nextpage=https%3A%2F%2Fwww.netflix.com%2Fbrowse`;
             
             return {
                 success: true,
                 token: token,
                 loginUrl: loginUrl,
-                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-                method: 'manual'
+                expiresAt: new Date(tokenData.expires).toISOString(),
+                method: 'cookie_based'
             };
 
         } catch (error) {
-            console.error('Generate token error:', error.message);
-            
-            // Fallback: Tạo token đơn giản
+            console.error('Gen token error:', error);
             return {
-                success: true,
-                token: 'manual_' + Date.now(),
-                loginUrl: 'https://www.netflix.com/login',
-                expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-                method: 'fallback',
-                note: 'Sử dụng login trực tiếp vì không thể tạo auto token'
+                success: false,
+                error: error.message
             };
         }
     }
 
-    // Get account info chi tiết
-    async getAccountInfo(cookieInput) {
-        const checkResult = await this.checkCookie(cookieInput);
-        
-        if (checkResult.status !== 'Live') {
-            return checkResult;
-        }
-        
-        // Thêm thông tin bổ sung
+    // Alternative: Dùng API khác để check
+    async checkWithAlternative(cookieInput) {
         try {
-            const cookies = typeof cookieInput === 'string' ? this.parseCookie(cookieInput) : cookieInput;
-            const cookieStr = this.stringifyCookies(cookies);
+            const cookies = this.parseCookie(cookieInput);
             
-            // Lấy subscription info
-            const response = await axios.get('https://www.netflix.com/account', {
+            // Thử gọi API whoami hoặc tương tự
+            const response = await axios.get('https://www.netflix.com/api/shakti/v1b5c5e5f/profiles', {
                 headers: {
-                    'Cookie': cookieStr,
+                    'Cookie': this.stringifyCookies(cookies),
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                }
+                    'Accept': 'application/json',
+                    'X-Netflix.request.client.user.guid': cookies['NetflixId']?.split('%')[0] || '',
+                },
+                timeout: 10000,
+                validateStatus: () => true // Accept all status
             });
-            
-            const $ = cheerio.load(response.data);
-            
-            // Parse subscription details từ HTML
-            const plan = $('.account-section:nth(0) .account-subsection').text().trim();
-            const nextBilling = $('.account-section').text().match(/Next billing: ([^<]+)/)?.[1];
-            
+
+            if (response.status === 200 && response.data) {
+                return {
+                    status: 'Live',
+                    data: response.data,
+                    cookies: cookies
+                };
+            }
+
             return {
-                ...checkResult,
-                subscription: {
-                    plan: plan || 'Unknown',
-                    nextBilling: nextBilling || 'Unknown',
-                }
+                status: 'Dead',
+                statusCode: response.status,
+                message: 'API returned error'
             };
-            
-        } catch (e) {
-            return checkResult;
+
+        } catch (error) {
+            return {
+                status: 'Error',
+                message: error.message
+            };
         }
     }
 }
