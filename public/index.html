@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Netflix Cookie Checker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #e50914;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+        
+        .input-section {
+            background: rgba(255,255,255,0.05);
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 10px;
+            color: #ccc;
+            font-weight: 500;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 15px;
+            border: 2px solid #0f3460;
+            border-radius: 10px;
+            background: #0a0e27;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            resize: vertical;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #e50914;
+        }
+        
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            flex: 1;
+            min-width: 120px;
+            padding: 15px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-check {
+            background: #0f3460;
+            color: #fff;
+        }
+        
+        .btn-gen {
+            background: #e50914;
+            color: #fff;
+        }
+        
+        .btn-info {
+            background: #533483;
+            color: #fff;
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .result {
+            background: rgba(255,255,255,0.05);
+            padding: 25px;
+            border-radius: 15px;
+            display: none;
+        }
+        
+        .result.show {
+            display: block;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 10px;
+        }
+        
+        .status.live {
+            background: rgba(0,255,0,0.1);
+            border: 1px solid #00ff00;
+        }
+        
+        .status.dead {
+            background: rgba(255,0,0,0.1);
+            border: 1px solid #ff0000;
+        }
+        
+        .status-icon {
+            font-size: 24px;
+        }
+        
+        .status-text {
+            font-size: 20px;
+            font-weight: bold;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .info-card {
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        
+        .info-label {
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            color: #fff;
+            font-size: 16px;
+            font-weight: 500;
+            word-break: break-all;
+        }
+        
+        .token-box {
+            background: #000;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+            margin: 10px 0;
+            border: 1px solid #333;
+        }
+        
+        .copy-btn {
+            background: #333;
+            color: #fff;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .copy-btn:hover {
+            background: #444;
+        }
+        
+        .error {
+            color: #ff6b6b;
+            padding: 15px;
+            background: rgba(255,0,0,0.1);
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #e50914;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Netflix Cookie Checker</h1>
+        <p class="subtitle">Check cookie & Generate login token</p>
+        
+        <div class="input-section">
+            <label>📋 Nhập Netflix Cookie:</label>
+            <textarea id="cookieInput" placeholder='Dán cookie ở đây...&#10;&#10;Hỗ trợ format:&#10;- JSON (EditThisCookie)&#10;- Netscape format&#10;- Header string (a=b; c=d)'></textarea>
+            
+            <div class="buttons">
+                <button class="btn-check" onclick="checkCookie()">🔍 Check</button>
+                <button class="btn-info" onclick="getInfo()">ℹ️ Info</button>
+                <button class="btn-gen" onclick="generateToken()">⚡ Gen Token</button>
+            </div>
+        </div>
+        
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        
+        async function checkCookie() {
+            await callAPI('/api/check', 'check');
+        }
+        
+        async function getInfo() {
+            await callAPI('/api/info', 'info');
+        }
+        
+        async function generateToken() {
+            await callAPI('/api/gen', 'gen');
+        }
+        
+        async function callAPI(endpoint, type) {
+            const cookie = document.getElementById('cookieInput').value.trim();
+            const resultDiv = document.getElementById('result');
+            
+            if (!cookie) {
+                alert('Vui lòng nhập cookie!');
+                return;
+            }
+            
+            // Disable buttons
+            document.querySelectorAll('button').forEach(b => b.disabled = true);
+            
+            resultDiv.classList.add('show');
+            resultDiv.innerHTML = '<div class="loading"><span class="spinner"></span>Đang xử lý...</div>';
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cookie })
+                });
+                
+                const data = await response.json();
+                console.log('Response:', data);
+                
+                if (type === 'gen' && data.success) {
+                    renderGenResult(data);
+                } else if (data.success) {
+                    renderCheckResult(data);
+                } else {
+                    renderError(data);
+                }
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Lỗi: ${error.message}</div>`;
+            }
+            
+            // Enable buttons
+            document.querySelectorAll('button').forEach(b => b.disabled = false);
+        }
+        
+        function renderCheckResult(data) {
+            const resultDiv = document.getElementById('result');
+            const isLive = data.status === 'Live';
+            
+            let html = `
+                <div class="status ${isLive ? 'live' : 'dead'}">
+                    <span class="status-icon">${isLive ? '✅' : '❌'}</span>
+                    <span class="status-text">${isLive ? 'COOKIE LIVE' : 'COOKIE DEAD'}</span>
+                </div>
+            `;
+            
+            if (isLive && data.account) {
+                html += `
+                    <div class="info-grid">
+                        <div class="info-card">
+                            <div class="info-label">Country</div>
+                            <div class="info-value">${data.account.country || 'N/A'}</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-label">Membership</div>
+                            <div class="info-value">${data.account.membershipStatus || 'N/A'}</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-label">Can Watch</div>
+                            <div class="info-value">${data.account.canWatch ? '✅ Yes' : '❌ No'}</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-label">Free Trial</div>
+                            <div class="info-value">${data.account.isInFreeTrial ? '✅ Yes' : '❌ No'}</div>
+                        </div>
+                    </div>
+                `;
+                
+                if (data.profile) {
+                    html += `
+                        <div class="info-card" style="margin-top: 15px;">
+                            <div class="info-label">Active Profile</div>
+                            <div class="info-value">${data.profile.name}</div>
+                        </div>
+                    `;
+                }
+            }
+            
+            if (data.message) {
+                html += `<p style="margin-top: 15px; color: #888;">${data.message}</p>`;
+            }
+            
+            resultDiv.innerHTML = html;
+        }
+        
+        function renderGenResult(data) {
+            const resultDiv = document.getElementById('result');
+            
+            resultDiv.innerHTML = `
+                <div class="status live">
+                    <span class="status-icon">✅</span>
+                    <span class="status-text">TOKEN GENERATED</span>
+                </div>
+                
+                <div class="info-grid">
+                    <div class="info-card">
+                        <div class="info-label">Status</div>
+                        <div class="info-value">Success</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-label">Generation Time</div>
+                        <div class="info-value">${data.generationTime}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-label">Expiry</div>
+                        <div class="info-value">${data.expiry}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-label">Time Remaining</div>
+                        <div class="info-value">${data.timeRemaining}</div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <div class="info-label">Direct Login URL:</div>
+                    <div class="token-box" id="loginUrl">${data.directLoginUrl}</div>
+                    <button class="copy-btn" onclick="copyToClipboard('loginUrl')">📋 Copy URL</button>
+                </div>
+                
+                <div style="margin-top: 15px;">
+                    <div class="info-label">Token:</div>
+                    <div class="token-box" id="token">${data.token}</div>
+                    <button class="copy-btn" onclick="copyToClipboard('token')">📋 Copy Token</button>
+                </div>
+                
+                ${data.account ? `
+                <div class="info-grid" style="margin-top: 15px;">
+                    <div class="info-card">
+                        <div class="info-label">Country</div>
+                        <div class="info-value">${data.account.country}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-label">Profile</div>
+                        <div class="info-value">${data.account.profile}</div>
+                    </div>
+                </div>
+                ` : ''}
+            `;
+        }
+        
+        function renderError(data) {
+            document.getElementById('result').innerHTML = `
+                <div class="status dead">
+                    <span class="status-icon">❌</span>
+                    <span class="status-text">ERROR</span>
+                </div>
+                <div class="error">
+                    <strong>${data.error || 'Unknown Error'}</strong><br>
+                    ${data.message || ''}
+                </div>
+            `;
+        }
+        
+        function copyToClipboard(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Đã copy!');
+            });
+        }
+    </script>
+</body>
+</html>
